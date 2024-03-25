@@ -3171,13 +3171,13 @@ static void mariadb_db_close_mysql(pTHX_ imp_drh_t *imp_drh, imp_dbh_t *imp_dbh,
 #ifdef _WIN32
         /*
           InactiveDestroy implementation for Windows platforms:
-          Direcrly close the native Windows socket. Probably client library
-          will throw some error but this is the the only option what can we do.
+          Directly close the native Windows socket. Probably client library
+          will throw some error but this is the only option we have.
           MariaDB and MySQL client libraries do not allow us to change or
-          replace communication socket with some other because it is stored
-          in private part of MYSQL* structure. And Windows does have any
-          Winsock function which duplicates and replaces existing and opened
-          socket by a new one, like dup2() (which is used below).
+          replace communication socket with another one because it is stored
+          in private part of MYSQL* structure. And Windows does not have any
+          Winsock function which duplicates and replaces an open socket
+          by a new one, like dup2() (used below for non-Windows plattforms).
         */
         sock_os = win32_get_osfhandle(imp_dbh->sock_fd);
         closesocket(sock_os);
@@ -3189,12 +3189,12 @@ static void mariadb_db_close_mysql(pTHX_ imp_drh_t *imp_drh, imp_dbh_t *imp_dbh,
           and associate it via dup2() with the sock_fd file descriptor number
           which is used by the MariaDB or MySQL client library for connection
           to the database server. Client library can still call on it any
-          socket related function without nothing unexpected (it just detects
+          socket related function without anything unexpected (it just detects
           that connection was lost) and without ability to change any server
           state, like reading pending data, executing commands or closing
           server-side prepared statements. In case socket() or dup2() fails
           then close the underlaying sock_fd to ensure that MariaDB or MySQL
-          client library does not contact server.
+          client library does not contact the server.
         */
         empty_sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (empty_sock_fd < 0)
@@ -3291,7 +3291,7 @@ int mariadb_db_disconnect(SV* dbh, imp_dbh_t* imp_dbh)
 
   /* We assume that disconnect will always work       */
   /* since most errors imply already disconnected.    */
-  /* Explicit call to $dbh->disconnect() is never affected InactiveDestroy */
+  /* Explicit call to $dbh->disconnect() is not affected by InactiveDestroy */
   mariadb_db_close_mysql(aTHX_ imp_drh, imp_dbh, FALSE);
 
   /* We don't free imp_dbh since a reference still exists    */
@@ -3328,10 +3328,10 @@ int mariadb_dr_discon_all (SV *drh, imp_drh_t *imp_drh) {
 
   /*
     Any explicit call to $dbh->disconnect() or $drh->disconnect_all() should
-    do the real disconnect and not to be affected by the InactiveDestroy.
+    do the real disconnect and not be affected by InactiveDestroy.
     DBI implicitly and automatically calls $drh->disconnect_all() in its own
     END block, which should follow the InactiveDestroy dbh settings.
-    DBI's END block sets $DBI::PERL_ENDING to 1 to allow drivers detecting
+    DBI's END block sets $DBI::PERL_ENDING to 1 to allow drivers distinguish
     between implicit and explicit $drh->disconnect_all() calls.
   */
   follow_inactive_destroy = SvTRUE(get_sv("DBI::PERL_ENDING", 0));
@@ -5743,10 +5743,11 @@ void mariadb_st_destroy(SV *sth, imp_sth_t *imp_sth) {
   if (imp_sth->stmt)
   {
     /*
-      When doing InactiveDestroy, change client's statement state of server-side
-      prepared statement to pre-prepare state which prevents sending any network
-      packet or deallocating server-side prepared statement on the server itself.
-      It is number less or equal to MYSQL_STMT_INITTED / MYSQL_STMT_INIT_DONE.
+      When doing InactiveDestroy, change client's statement state from
+      "server-side prepared statement" to "pre-prepare state" which prevents
+      sending any network packet or deallocating server-side prepared statement
+      on the server itself.
+      It is a number less or equal to MYSQL_STMT_INITTED / MYSQL_STMT_INIT_DONE.
       Some client versions use the number 0, others use the number 1. To ensure
       that it is "less or equal" for any client, set it to number 0.
     */
